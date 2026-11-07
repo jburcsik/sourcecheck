@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="160" viewBox="0 0 720 160" font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="13">
+  <rect width="720" height="160" rx="8" fill="rgb(24,26,32)"/>
+  <rect width="720" height="28" rx="8" fill="rgb(40,43,52)"/>
+  <rect y="14" width="720" height="14" fill="rgb(40,43,52)"/>
+  <circle cx="18" cy="14" r="5" fill="rgb(236,95,87)"/>
+  <circle cx="36" cy="14" r="5" fill="rgb(242,188,66)"/>
+  <circle cx="54" cy="14" r="5" fill="rgb(92,196,98)"/>
+  <text x="20" y="56" fill="rgb(140,200,255)">$ sourcecheck source.txt edited.txt</text>
+  <text x="20" y="76" fill="rgb(255,180,100)">9 new words: Cook the onions on a low heat until they are soft, golden</text>
+  <text x="20" y="96" fill="rgb(255,180,100)">and sweet enough to eat on their own.</text>
+  <text x="20" y="116" fill="rgb(210,214,222)">{"over_limit": 1, "retained": 0.621, "words_in": 29, "words_out": 29,</text>
+  <text x="20" y="136" fill="rgb(210,214,222)">"new_words": 7}</text>
+</svg>
