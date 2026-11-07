@@ -2,7 +2,7 @@
 
 sourcecheck compares an edited text with the source it was written from and flags every sentence that adds more than a few words the source never used.
 
-![Example run](example.svg)
+<p align="center"><img src="explainer.gif" width="560" alt="A sentence you wrote, the model's edit of it with nine new words underlined and flagged, then the check running over a whole document and the terminal output listing the flagged sentences."></p>
 
 ## When to use it
 
@@ -36,6 +36,8 @@ edited.txt:
     Warm a spoon of butter in a wide pan. Cook the onions on a low heat until they are soft, golden and sweet enough to eat on their own.
 
 Run the check:
+
+![Example run](example.svg)
 
     $ sourcecheck source.txt edited.txt
     9 new words: Cook the onions on a low heat until they are soft, golden and sweet enough to eat on their own.
