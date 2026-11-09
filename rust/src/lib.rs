@@ -1,17 +1,16 @@
 //! Flag sentences in an edited text that add words not found in its source.
 //!
-//! A port of `sourcecheck.py`. Every function mirrors its Python namesake, and
-//! the text rules follow CPython (`str.split`, `str.splitlines`, `round`,
-//! `json.dumps`) so both versions print the same bytes for the same input.
+//! A port of `sourcecheck.py`. `words`, `sentences`, `added_words`, `retained`
+//! and `check` mirror their Python namesakes, and the helpers reproduce the
+//! CPython behaviour they rely on (`str.split`, `str.splitlines`, text-mode
+//! reads, `round`, `json.dumps`) so both versions print the same output.
 
-pub mod difflib;
+mod difflib;
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
 
-use std::collections::HashMap;
-
-use difflib::{BIndex, FxBuild, SequenceMatcher, Tag};
+use difflib::{BIndex, SequenceMatcher, Tag};
 
 /// One edited sentence with more new words than allowed.
 #[derive(Debug, Clone, PartialEq)]
@@ -40,7 +39,7 @@ fn py_isspace(c: char) -> bool {
 /// Return the words in text, lowercased, with curly apostrophes straightened.
 ///
 /// Matches the regex `[A-Za-z0-9]+(?:'[A-Za-z]+)?`.
-pub fn words(text: &str) -> Vec<String> {
+fn words(text: &str) -> Vec<String> {
     let chars: Vec<char> = text
         .chars()
         .map(|c| if c == '\u{2019}' { '\'' } else { c })
@@ -73,7 +72,7 @@ pub fn words(text: &str) -> Vec<String> {
 }
 
 /// Split text into sentences ending at `.`, `!` or `?` followed by whitespace.
-pub fn sentences(text: &str) -> Vec<String> {
+fn sentences(text: &str) -> Vec<String> {
     let mut result = Vec::new();
     let mut current = String::new();
     for token in text.split(py_isspace).filter(|t| !t.is_empty()) {
@@ -92,7 +91,7 @@ pub fn sentences(text: &str) -> Vec<String> {
 }
 
 /// Python's `str.splitlines()` without line ends.
-pub fn splitlines(text: &str) -> Vec<&str> {
+fn splitlines(text: &str) -> Vec<&str> {
     let mut lines = Vec::new();
     let mut start = 0;
     let mut iter = text.char_indices().peekable();
@@ -128,11 +127,13 @@ pub fn splitlines(text: &str) -> Vec<&str> {
 }
 
 /// Count the words in edited that are inserted or replaced relative to original.
-pub fn added_words(original: &str, edited: &str) -> usize {
+#[cfg(test)]
+fn added_words(original: &str, edited: &str) -> usize {
     added_tokens(&words(original), &words(edited))
 }
 
 /// `added_words` on word lists that are already split (words or their ids).
+#[cfg(test)]
 fn added_tokens<T: Eq + std::hash::Hash>(a: &[T], b: &[T]) -> usize {
     added_indexed(a, &BIndex::new(b))
 }
@@ -153,7 +154,7 @@ fn round3(x: f64) -> f64 {
 }
 
 /// Return the share of edited words that sit inside a 3-word run copied from source.
-pub fn retained(source: &str, edited: &str) -> f64 {
+fn retained(source: &str, edited: &str) -> f64 {
     let (src, out) = (words(source), words(edited));
     let runs: HashSet<&[String]> = src.windows(3).collect();
     let mut covered = vec![false; out.len()];
@@ -173,8 +174,10 @@ pub fn check(source: &str, edited: &str, max_new: i64) -> Result<Report, String>
         return Err("source has no sentences".to_string());
     }
     // Words become small integer ids once, so each comparison hashes integers,
-    // and each edited sentence is indexed once for all source sentences.
-    let mut ids: HashMap<String, u32, FxBuild> = HashMap::default();
+    // and each edited sentence is indexed once for all source sentences. The
+    // id map is keyed on words from the input files, so it keeps the default
+    // SipHash; only the integer-keyed maps in difflib use FxHash.
+    let mut ids: HashMap<String, u32> = HashMap::new();
     let mut intern = |text: &str| -> Vec<u32> {
         words(text)
             .into_iter()
@@ -241,7 +244,8 @@ fn json_string(text: &str) -> String {
     out
 }
 
-/// A float as Python's `repr`: shortest round trip, always with a decimal point.
+/// A float as Python's `repr` writes it, for values `round3` produces: in
+/// [0, 1] with at most 3 decimals, where `repr` never uses an exponent.
 fn json_float(x: f64) -> String {
     let text = format!("{x}");
     if text.contains('.') {

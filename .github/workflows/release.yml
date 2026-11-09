@@ -35,6 +35,17 @@ jobs:
       - if: matrix.target == 'x86_64-unknown-linux-musl'
         run: sudo apt-get update && sudo apt-get install -y musl-tools
       - run: cargo build --release --locked --target ${{ matrix.target }}
+      # Smoke test the built binary (x86_64 macOS runs under Rosetta): the
+      # README example adds nine words, so it must exit 1.
+      - name: Smoke test
+        run: |
+          printf 'Cook the onions on a low heat until they turn soft and golden.' > s.txt
+          printf 'Cook the onions on a low heat until they are soft, golden and sweet enough to eat on their own.' > e.txt
+          set +e
+          "target/${{ matrix.target }}/release/sourcecheck" s.txt e.txt
+          code=$?
+          set -e
+          test "$code" = 1
       - name: Package
         run: |
           name="sourcecheck-${GITHUB_REF_NAME}-${{ matrix.target }}"
@@ -65,4 +76,4 @@ jobs:
       - run: (cd dist && sha256sum * > SHA256SUMS)
       - env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --notes "Prebuilt sourcecheck binaries. Output is identical to the Python version; see the README."
+        run: gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --notes "Prebuilt sourcecheck binaries for macOS, Linux and Windows. On Linux and macOS the output matches the Python version byte for byte; see the README for the known differences."

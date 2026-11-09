@@ -2,7 +2,6 @@
 name = "sourcecheck"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.75"
 description = "Flag sentences in an edited text that add words not found in its source."
 license = "MIT"
 repository = "https://github.com/jburcsik/sourcecheck"
@@ -16,3 +15,6 @@ path = "src/main.rs"
 lto = true
 codegen-units = 1
 strip = true
+
+[dependencies]
+rustc-hash = "2"

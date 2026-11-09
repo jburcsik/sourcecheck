@@ -18,9 +18,11 @@ Or clone the repository and run `pip install .`, or skip the install and run the
 
 ### Single binary
 
-The `rust/` folder holds a Rust port that ships as one file with nothing else to install. Download the archive for your system from the [latest release](https://github.com/jburcsik/sourcecheck/releases/latest), unpack it and put `sourcecheck` on your PATH, or build it with `cargo install --path rust`.
+The `rust/` folder holds a Rust port that ships as one file with nothing else to install. Download the archive for your system from the [latest release](https://github.com/jburcsik/sourcecheck/releases/latest), unpack it and put `sourcecheck` on your PATH, or build it with `cargo install --path rust`. On macOS, a binary downloaded in a browser is quarantined until you run `xattr -d com.apple.quarantine sourcecheck`.
 
-Both versions print the same bytes and exit with the same codes for the same input. CI runs them side by side on 3,000 generated cases (`rust/parity.py`), including inputs over 200 words, curly quotes, non-breaking and other Unicode spaces, Windows line endings and non-ASCII text. On a 5,500-word source and edit the binary takes 0.07 s against 1.04 s for the Python version, measured with hyperfine on an Apple M4 Pro laptop.
+On Linux and macOS both versions print the same bytes and exit with the same codes for the same files and options. CI runs them side by side (`rust/parity.py`) on 3,000 generated texts, including sentences of 200+ words, curly quotes, non-breaking and other Unicode spaces, Windows line endings and non-ASCII text, and on a table of command lines covering option prefixes such as `--max 5`, unknown options and odd file names. The known differences: `-h` output does not wrap to the terminal width, `--max-new` accepts ASCII digits only, error messages on stderr are worded differently, and Windows line endings in the output differ because Python writes `\r\n` there.
+
+On a 5,500-word source and edit the binary takes 0.06 s against 1.09 s for the Python version, measured with hyperfine on an Apple M4 Pro laptop.
 
 ## Run
 

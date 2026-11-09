@@ -4,54 +4,27 @@
 //! and therefore the counts built on them, are identical to CPython's.
 
 use std::collections::HashMap;
-use std::hash::{BuildHasherDefault, Hasher};
 
-/// FxHash, the multiply-rotate hash rustc uses: much cheaper than SipHash for
-/// small keys. The maps here are internal and never see untrusted key choice
-/// at a scale where flooding matters.
-#[derive(Default)]
-pub struct FxHasher(u64);
-
-impl Hasher for FxHasher {
-    fn write(&mut self, bytes: &[u8]) {
-        for &byte in bytes {
-            self.write_u64(u64::from(byte));
-        }
-    }
-    fn write_u32(&mut self, n: u32) {
-        self.write_u64(u64::from(n));
-    }
-    fn write_u64(&mut self, n: u64) {
-        self.0 = (self.0.rotate_left(5) ^ n).wrapping_mul(0x51_7c_c1_b7_27_22_0a_95);
-    }
-    fn write_usize(&mut self, n: usize) {
-        self.write_u64(n as u64);
-    }
-    fn finish(&self) -> u64 {
-        self.0
-    }
-}
-
-pub type FxBuild = BuildHasherDefault<FxHasher>;
+use rustc_hash::FxBuildHasher;
 
 /// A run of `size` equal items starting at `a[i]` and `b[j]`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Match {
-    pub i: usize,
-    pub j: usize,
-    pub size: usize,
+pub(crate) struct Match {
+    pub(crate) i: usize,
+    pub(crate) j: usize,
+    pub(crate) size: usize,
 }
 
 /// The `b` side of a matcher: CPython's `b2j` with the autojunk rule
 /// applied. It depends on `b` alone, so one index serves many `a` sequences.
-pub struct BIndex<'s, T: Eq + std::hash::Hash> {
+pub(crate) struct BIndex<'s, T: Eq + std::hash::Hash> {
     b: &'s [T],
-    b2j: HashMap<&'s T, Vec<usize>, FxBuild>,
+    b2j: HashMap<&'s T, Vec<usize>, FxBuildHasher>,
 }
 
 impl<'s, T: Eq + std::hash::Hash> BIndex<'s, T> {
-    pub fn new(b: &'s [T]) -> Self {
-        let mut b2j: HashMap<&T, Vec<usize>, FxBuild> = HashMap::default();
+    pub(crate) fn new(b: &'s [T]) -> Self {
+        let mut b2j: HashMap<&T, Vec<usize>, FxBuildHasher> = HashMap::default();
         for (j, item) in b.iter().enumerate() {
             b2j.entry(item).or_default().push(j);
         }
@@ -66,15 +39,23 @@ impl<'s, T: Eq + std::hash::Hash> BIndex<'s, T> {
     }
 }
 
-pub struct SequenceMatcher<'s, T: Eq + std::hash::Hash> {
+pub(crate) struct SequenceMatcher<'s, T: Eq + std::hash::Hash> {
     a: &'s [T],
     b: &'s [T],
-    b2j: &'s HashMap<&'s T, Vec<usize>, FxBuild>,
+    b2j: &'s HashMap<&'s T, Vec<usize>, FxBuildHasher>,
+}
+
+/// Reusable rows for `find_longest_match`; entries are zero between calls.
+struct Rows {
+    j2len: Vec<usize>,
+    newj2len: Vec<usize>,
+    touched: Vec<usize>,
+    newtouched: Vec<usize>,
 }
 
 impl<'s, T: Eq + std::hash::Hash> SequenceMatcher<'s, T> {
     /// Match `a` against an already indexed `b`.
-    pub fn with_index(a: &'s [T], index: &'s BIndex<'s, T>) -> Self {
+    pub(crate) fn with_index(a: &'s [T], index: &'s BIndex<'s, T>) -> Self {
         SequenceMatcher {
             a,
             b: index.b,
@@ -84,15 +65,39 @@ impl<'s, T: Eq + std::hash::Hash> SequenceMatcher<'s, T> {
 
     /// Longest matching block in `a[alo..ahi]` and `b[blo..bhi]`; ties go to
     /// the earliest start in `a`, then in `b`.
-    pub fn find_longest_match(&self, alo: usize, ahi: usize, blo: usize, bhi: usize) -> Match {
+    #[cfg(test)]
+    fn find_longest_match(&self, alo: usize, ahi: usize, blo: usize, bhi: usize) -> Match {
+        self.longest_match(&mut self.rows(), alo, ahi, blo, bhi)
+    }
+
+    fn rows(&self) -> Rows {
+        Rows {
+            j2len: vec![0; self.b.len()],
+            newj2len: vec![0; self.b.len()],
+            touched: Vec::new(),
+            newtouched: Vec::new(),
+        }
+    }
+
+    fn longest_match(
+        &self,
+        rows: &mut Rows,
+        alo: usize,
+        ahi: usize,
+        blo: usize,
+        bhi: usize,
+    ) -> Match {
         let (a, b) = (self.a, self.b);
         let (mut besti, mut bestj, mut bestsize) = (alo, blo, 0usize);
         // j2len[j] is the length of the match ending at a[i-1], b[j]; CPython
         // keeps it in a dict that is rebuilt per row. Two dense rows plus the
         // list of positions written keep the same values without hashing.
-        let mut j2len = vec![0usize; b.len() + 1];
-        let mut newj2len = vec![0usize; b.len() + 1];
-        let (mut touched, mut newtouched): (Vec<usize>, Vec<usize>) = (Vec::new(), Vec::new());
+        let Rows {
+            j2len,
+            newj2len,
+            touched,
+            newtouched,
+        } = rows;
         for (i, item) in a.iter().enumerate().take(ahi).skip(alo) {
             if let Some(positions) = self.b2j.get(item) {
                 for &j in positions {
@@ -112,13 +117,18 @@ impl<'s, T: Eq + std::hash::Hash> SequenceMatcher<'s, T> {
                     }
                 }
             }
-            for &j in &touched {
+            for &j in touched.iter() {
                 j2len[j] = 0;
             }
-            std::mem::swap(&mut j2len, &mut newj2len);
-            std::mem::swap(&mut touched, &mut newtouched);
+            std::mem::swap(j2len, newj2len);
+            std::mem::swap(touched, newtouched);
             newtouched.clear();
         }
+        // Leave the rows zeroed for the next call.
+        for &j in touched.iter() {
+            j2len[j] = 0;
+        }
+        touched.clear();
         // Extend over items the autojunk rule removed from b2j. There is no
         // junk predicate, so CPython's two junk-extension loops never run.
         while besti > alo && bestj > blo && a[besti - 1] == b[bestj - 1] {
@@ -141,12 +151,13 @@ impl<'s, T: Eq + std::hash::Hash> SequenceMatcher<'s, T> {
 
     /// Non-overlapping matching blocks in order, adjacent blocks merged,
     /// ending with the sentinel `(len(a), len(b), 0)`.
-    pub fn get_matching_blocks(&self) -> Vec<Match> {
+    pub(crate) fn get_matching_blocks(&self) -> Vec<Match> {
         let (la, lb) = (self.a.len(), self.b.len());
+        let mut rows = self.rows();
         let mut queue = vec![(0, la, 0, lb)];
         let mut blocks = Vec::new();
         while let Some((alo, ahi, blo, bhi)) = queue.pop() {
-            let m = self.find_longest_match(alo, ahi, blo, bhi);
+            let m = self.longest_match(&mut rows, alo, ahi, blo, bhi);
             if m.size > 0 {
                 blocks.push(m);
                 if alo < m.i && blo < m.j {
@@ -190,7 +201,7 @@ impl<'s, T: Eq + std::hash::Hash> SequenceMatcher<'s, T> {
     }
 
     /// `(tag, i1, i2, j1, j2)` edit operations turning `a` into `b`.
-    pub fn get_opcodes(&self) -> Vec<(Tag, usize, usize, usize, usize)> {
+    pub(crate) fn get_opcodes(&self) -> Vec<(Tag, usize, usize, usize, usize)> {
         let (mut i, mut j) = (0, 0);
         let mut answer = Vec::new();
         for m in self.get_matching_blocks() {
@@ -216,7 +227,7 @@ impl<'s, T: Eq + std::hash::Hash> SequenceMatcher<'s, T> {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Tag {
+pub(crate) enum Tag {
     Replace,
     Delete,
     Insert,
