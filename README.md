@@ -16,6 +16,12 @@ Python 3.10 or newer, no dependencies.
 
 Or clone the repository and run `pip install .`, or skip the install and run the single file with `python sourcecheck.py`.
 
+### Single binary
+
+The `rust/` folder holds a Rust port that ships as one file with nothing else to install. Download the archive for your system from the [latest release](https://github.com/jburcsik/sourcecheck/releases/latest), unpack it and put `sourcecheck` on your PATH, or build it with `cargo install --path rust`.
+
+Both versions print the same bytes and exit with the same codes for the same input. CI runs them side by side on 3,000 generated cases (`rust/parity.py`), including inputs over 200 words, curly quotes, non-breaking and other Unicode spaces, Windows line endings and non-ASCII text. On a 5,500-word source and edit the binary takes 0.07 s against 1.04 s for the Python version, measured with hyperfine on an Apple M4 Pro laptop.
+
 ## Run
 
     sourcecheck SOURCE EDITED [--max-new N] [--json]
@@ -54,7 +60,7 @@ The second sentence is flagged: against its closest source sentence it inserts o
 
 - A word is a run of letters and numbers with an optional apostrophe part, compared without regard to case.
 - A sentence ends at `.`, `!` or `?` followed by whitespace. The source is read as one text. Each line of the edited file is split on its own, so keep each edited paragraph on one line.
-- Each edited sentence is matched with the source sentence that needs the fewest added words, using `difflib.SequenceMatcher` on the word lists. Inserted and replaced words count as added; deleted words do not.
+- Each edited sentence is matched with the source sentence that needs the fewest added words, using `difflib.SequenceMatcher` on the word lists (ported line for line in `rust/src/difflib.rs`). Inserted and replaced words count as added; deleted words do not.
 
 ## What it does not do
 
@@ -66,6 +72,13 @@ The second sentence is flagged: against its closest source sentence it inserts o
 
     pip install ".[dev]"
     pytest
+
+For the Rust port:
+
+    cd rust
+    cargo test
+    cargo build --release
+    python3 parity.py
 
 ## Security
 
